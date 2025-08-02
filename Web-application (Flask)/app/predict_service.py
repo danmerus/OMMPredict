@@ -1,8 +1,10 @@
+from pathlib import Path
 import numpy as np
 import pickle
 
+MODEL_PATH = Path(__file__).resolve().parent / "static" / "model.pt"
 
-with open('./static/model.pt', 'rb') as f:
+with open(MODEL_PATH, 'rb') as f:
     model = pickle.load(f)
 
 
