@@ -4,6 +4,16 @@ import pandas as pd
 from datetime import date
 from converting_service import convert
 from predict_service import predict
+import streamlit as st
+from db import get_conn, init_db, insert_prediction, read_predictions
+
+@st.cache_resource
+def get_db():
+    conn = get_conn()
+    init_db(conn)
+    return conn
+
+conn = get_db()
 
 st.set_page_config("OMM Predict", page_icon="🩺", layout="centered")
 
@@ -65,6 +75,24 @@ with tab_predict:
         ))
 
         st.success("**Высокий риск**" if outcome else "**Низкий риск**")
+        row = dict(
+            patient_card=patient_card,
+            date_research=date.today().strftime("%d.%m.%Y"),
+            relapse=int(relapse),
+            periods=float(periods),
+            mecho=float(mecho),
+            first_symptom=float(first_symptom),
+            emergency_birth=int(emergency_birth),
+            fsh=float(fsh),
+            vleft=float(vleft),
+            vright=float(vright),
+            vegfa634=vegfa634,
+            tp53=tp53,
+            vegfa936=vegfa936,
+            kitlg80441=kitlg80441,
+            outcome=("Высокий" if outcome else "Низкий"),
+        )
+        insert_prediction(conn, row)
 
 # =============  TAB 2 – session history (CSV export)  ============== #
 with tab_history:
