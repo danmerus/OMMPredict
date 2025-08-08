@@ -4,3 +4,4 @@ flask-sqlalchemy
 numpy
 scikit-learn
 catboost
+supabase
