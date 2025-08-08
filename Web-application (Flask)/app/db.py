@@ -1,49 +1,26 @@
-import sqlite3
-from pathlib import Path
+from supabase import create_client, Client
+import streamlit as st
+import pandas as pd
 
-DB_PATH = Path("ommpredict.db")
+@st.cache_resource
+def get_supabase() -> Client:
+    url = st.secrets["supabase"]["url"]
+    # Use service_key if available; else fallback to anon_key
+    key = st.secrets["supabase"].get("service_key") or st.secrets["supabase"]["anon_key"]
+    return create_client(url, key)
 
-def get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False, isolation_level=None)
-    conn.execute("PRAGMA journal_mode=WAL;")  # better for concurrent reads
-    return conn
+def insert_prediction(row: dict):
+    sb = get_supabase()
+    # supabase-py expects JSON-serializable primitives
+    res = sb.table("predictions").insert(row).execute()
+    # res.data contains inserted rows (list of dicts)
+    return res
 
-def init_db(conn):
-    conn.execute("""
-    CREATE TABLE IF NOT EXISTS predictions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        created_at   TEXT DEFAULT (datetime('now')),
-        patient_card TEXT,
-        date_research TEXT,
-        relapse INTEGER,
-        periods REAL,
-        mecho REAL,
-        first_symptom REAL,
-        emergency_birth INTEGER,
-        fsh REAL,
-        vleft REAL,
-        vright REAL,
-        vegfa634 TEXT,
-        tp53 TEXT,
-        vegfa936 TEXT,
-        kitlg80441 TEXT,
-        outcome TEXT
-    );
-    """)
-
-def insert_prediction(conn, row: dict):
-    cols = ["patient_card","date_research","relapse","periods","mecho",
-            "first_symptom","emergency_birth","fsh","vleft","vright",
-            "vegfa634","tp53","vegfa936","kitlg80441","outcome"]
-    placeholders = ",".join("?" for _ in cols)
-    conn.execute(
-        f"INSERT INTO predictions ({','.join(cols)}) VALUES ({placeholders})",
-        tuple(row[c] for c in cols)
-    )
-
-def read_predictions(conn, limit=1000):
-    import pandas as pd
-    return pd.read_sql_query(
-        "SELECT * FROM predictions ORDER BY id DESC LIMIT ?",
-        conn, params=(limit,)
-    )
+def read_predictions(limit: int = 1000) -> pd.DataFrame:
+    sb = get_supabase()
+    res = sb.table("predictions") \
+            .select("*") \
+            .order("id", desc=True) \
+            .limit(limit) \
+            .execute()
+    return pd.DataFrame(res.data or [])
