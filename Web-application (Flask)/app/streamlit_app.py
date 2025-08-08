@@ -4,22 +4,15 @@ import pandas as pd
 from datetime import date
 from converting_service import convert
 from predict_service import predict
-import streamlit as st
-from db import get_conn, init_db, insert_prediction, read_predictions
 
-@st.cache_resource
-def get_db():
-    conn = get_conn()
-    init_db(conn)
-    return conn
-
-conn = get_db()
+# NEW: import Supabase helpers
+from db import insert_prediction, read_predictions
 
 st.set_page_config("OMM Predict", page_icon="🩺", layout="centered")
 
 # ────────────────────  0. Session state helpers  ──────────────────── #
 if "records" not in st.session_state:
-    st.session_state.records = []       # will hold dicts per patient
+    st.session_state.records = []  # still keep local session history if you want
 
 def add_record(rec: dict):
     st.session_state.records.append(rec)
@@ -67,41 +60,58 @@ with tab_predict:
             vleft_new, fsh, vright_new
         )
 
-        add_record( dict(
+        # Keep session display if you like
+        add_record(dict(
             id=len(st.session_state.records)+1,
             patient_card=patient_card,
             date_research=date.today().strftime("%d.%m.%Y"),
             target="Высокий" if outcome else "Низкий"
         ))
 
-        st.success("**Высокий риск**" if outcome else "**Низкий риск**")
+        # NEW: Persist to Supabase
         row = dict(
-            patient_card=patient_card,
-            date_research=date.today().strftime("%d.%m.%Y"),
-            relapse=int(relapse),
-            periods=float(periods),
-            mecho=float(mecho),
-            first_symptom=float(first_symptom),
-            emergency_birth=int(emergency_birth),
-            fsh=float(fsh),
-            vleft=float(vleft),
-            vright=float(vright),
-            vegfa634=vegfa634,
-            tp53=tp53,
-            vegfa936=vegfa936,
-            kitlg80441=kitlg80441,
-            outcome=("Высокий" if outcome else "Низкий"),
+            patient_card   = patient_card,
+            date_research  = date.today().strftime("%d.%m.%Y"),
+            relapse        = int(relapse),
+            periods        = float(periods),
+            mecho          = float(mecho),
+            first_symptom  = float(first_symptom),
+            emergency_birth= int(emergency_birth),
+            fsh            = float(fsh),
+            vleft          = float(vleft),
+            vright         = float(vright),
+            vegfa634       = vegfa634,
+            tp53           = tp53,
+            vegfa936       = vegfa936,
+            kitlg80441     = kitlg80441,
+            outcome        = "Высокий" if outcome else "Низкий",
         )
-        insert_prediction(conn, row)
+        try:
+            insert_prediction(row)
+            st.success("Записано в базу: **Высокий риск**" if outcome else "Записано в базу: **Низкий риск**")
+        except Exception as e:
+            st.error(f"Ошибка записи в Supabase: {e}")
 
 # =============  TAB 2 – session history (CSV export)  ============== #
 with tab_history:
-    st.header("Теклая сессия")
+    st.header("История (из БД)")
+    try:
+        df_db = read_predictions(limit=1000)
+    except Exception as e:
+        st.error(f"Ошибка чтения из Supabase: {e}")
+        df_db = pd.DataFrame()
+
+    st.dataframe(df_db, use_container_width=True)
+
+    if not df_db.empty:
+        csv_db = df_db.to_csv(index=False).encode("utf-8")
+        st.download_button("💾 Скачать CSV (БД)", csv_db, "ommpredict_history_db.csv", "text/csv")
+
+    # (Optional) also show in-memory session history
+    st.subheader("Текущая сессия (локально)")
     df = pd.DataFrame(st.session_state.records)
     st.dataframe(df, use_container_width=True)
 
     if not df.empty:
         csv = df.to_csv(index=False).encode("utf-8")
-        st.download_button("💾 Скачать CSV", csv, "ommpredict_history.csv", "text/csv")
-
-# ─────────────────────────  END  ──────────────────────────────────── #
+        st.download_button("💾 Скачать CSV (сессия)", csv, "ommpredict_history.csv", "text/csv")
