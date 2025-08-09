@@ -1,6 +1,7 @@
 # streamlit_app.py  ─────────────────────────────────────────────────
 import streamlit as st
 import pandas as pd
+import numpy as np
 from datetime import date
 from converting_service import convert
 from predict_service import predict, model_ready, NoCurrentModel
