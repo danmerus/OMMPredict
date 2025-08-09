@@ -2,6 +2,7 @@
 from __future__ import annotations
 import io, json, time, uuid, os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Any, Tuple, Optional, List
 
 import numpy as np
@@ -25,6 +26,10 @@ FEATURE_COLUMNS = [
 ]
 
 GENO_COLUMNS = ["vegfa634", "tp53", "vegfa936", "kitlg80441"]
+
+APP_DIR = Path(__file__).resolve().parent         # .../Web-application (Flask)/app
+DATA_DIR = APP_DIR / "data"                       # .../app/data
+DEFAULT_BASELINE = DATA_DIR / "baseline_examples.csv"
 
 @dataclass
 class TrainResult:
@@ -57,27 +62,28 @@ def _from_supabase_verified(limit: int = 50000) -> pd.DataFrame:
     df["target"] = df["actual"].map(lab_map)
     return df
 
-def _from_local_baseline(path: str) -> pd.DataFrame:
-    """
-    Load local baseline examples (CSV or XLSX).
-    Expected columns (human-friendly names are okay):
-      relapse, periods, mecho, first_symptom, emergency_birth, fsh, vleft, vright,
-      vegfa634, tp53, vegfa936, kitlg80441, actual
-    """
-    if not path:
-        return pd.DataFrame()
-    if not os.path.exists(path):
-        return pd.DataFrame()
-
-    ext = os.path.splitext(path)[1].lower()
-    if ext in [".xlsx", ".xls"]:
-        df = pd.read_excel(path)
+def _from_local_baseline(rel_or_abs: str | None = None) -> pd.DataFrame:
+    # If user passed an absolute path, use it; else resolve under app/
+    if rel_or_abs:
+        p = Path(rel_or_abs)
+        p = p if p.is_absolute() else (APP_DIR / rel_or_abs)
     else:
-        df = pd.read_csv(path)
+        p = DEFAULT_BASELINE
 
-    lab_map = {"Высокий": 1, "Низкий": 0, 1: 1, 0: 0, "high": 1, "low": 0}
-    if "actual" in df.columns and "target" not in df.columns:
-        df["target"] = df["actual"].map(lab_map)
+    p = p.resolve()
+    if not p.exists():
+        st.warning(f"Файл базовых примеров не найден: {p}")
+        return pd.DataFrame()
+
+    try:
+        # utf-8-sig is friendly to BOM/cyrillic
+        df = pd.read_csv(p, encoding="utf-8-sig")
+        # Optional: quick sanity
+        if df.empty:
+            st.warning(f"Файл пуст: {p}")
+    except Exception as e:
+        st.warning(f"Не удалось прочитать {p}: {e}")
+        return pd.DataFrame()
 
     return df
 
