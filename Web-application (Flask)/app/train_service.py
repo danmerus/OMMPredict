@@ -167,7 +167,9 @@ def train_catboost(
         l2_leaf_reg=l2_leaf_reg,
         random_seed=random_state,
         verbose=False,
-        scale_pos_weight=float(spw)
+        scale_pos_weight=float(spw),
+        od_type="Iter", 
+        od_wait=50 
     )
 
     model = CatBoostClassifier(**params)
