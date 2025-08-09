@@ -28,15 +28,15 @@ with tab_predict:
         c1, c2 = st.columns([2, 1])
 
         with c1:
-            patient_card   = st.text_input("ФИО пациента")
-            relapse        = st.selectbox("Рецидив эндометриомы", [0, 1])
-            periods        = st.number_input("Менструация, дней", min_value=0.0, step=0.1)
-            mecho          = st.number_input("М-эхо, мм", min_value=0.0, step=0.1)
-            first_symptom  = st.number_input("Появление первых симптомов (лет)", min_value=0.0, step=0.1)
-            emergency_birth= st.number_input("Срочные оперативные роды (кол-во)", min_value=0.0, step=1.0)
-            fsh            = st.number_input("ФСГ до операции, мМе/мл", min_value=0.0, step=0.1)
-            vleft          = st.number_input("V левого яичника, см³", min_value=0.0, step=0.1)
-            vright         = st.number_input("V правого яичника, см³", min_value=0.0, step=0.1)
+            patient_card    = st.text_input("ФИО пациента")
+            relapse         = st.selectbox("Рецидив эндометриомы", [0, 1])
+            periods         = st.number_input("Менструация, дней", min_value=0.0, step=0.1)
+            mecho           = st.number_input("М-эхо, мм", min_value=0.0, step=0.1)
+            first_symptom   = st.number_input("Появление первых симптомов (лет)", min_value=0.0, step=0.1)
+            emergency_birth = st.number_input("Срочные оперативные роды (кол-во)", min_value=0.0, step=1.0)
+            fsh             = st.number_input("ФСГ до операции, мМе/мл", min_value=0.0, step=0.1)
+            vleft           = st.number_input("V левого яичника, см³", min_value=0.0, step=0.1)
+            vright          = st.number_input("V правого яичника, см³", min_value=0.0, step=0.1)
 
         with c2:
             vegfa634   = st.selectbox("VEGF-A −634", ["CC", "GC", "GG"])
@@ -45,75 +45,60 @@ with tab_predict:
             kitlg80441 = st.selectbox("KITLG 80441", ["CC", "CT", "TT"])
 
         submitted = st.form_submit_button("Рассчитать")
-
+    SCALE = 532.0 # for volume
     if submitted:
-        vegfa634gg, vegfa634c, tp53gg, vegfa936cc, kitlg80441cc = convert(
-            vegfa634, tp53, vegfa936, kitlg80441
-        )
-
-        vleft_new  = vleft  * 532
-        vright_new = vright * 532
-
         try:
             if not model_ready():
-                st.info(
-                    "Модель пока не выбрана. Перейдите во вкладку **🧠 Обучение**, "
-                    "обучите модель и отметьте её как текущую."
-                )
+                st.info("Модель пока не выбрана. Перейдите во вкладку **🧠 Обучение**, обучите модель и отметьте её как текущую.")
             else:
                 outcome = predict(
-                    relapse, vegfa634, tp53, vegfa936, kitlg80441,
-                    periods, mecho, first_symptom, emergency_birth,
-                    fsh, vleft, vright
+                    int(relapse), vegfa634, tp53, vegfa936, kitlg80441,
+                    float(periods), float(mecho), float(first_symptom), int(emergency_birth),
+                    float(fsh), float(vleft)*SCALE, float(vright)*SCALE
                 )
-                # your add_record(...) + success UI
-                st.success("**Высокий риск**" if outcome else "**Низкий риск**")
-    
+                risk_text = "**Высокий риск**" if outcome else "**Низкий риск**"
+                st.success(risk_text)
+
+                # Save to session
+                add_record(dict(
+                    id=len(st.session_state.records)+1,
+                    patient_card=patient_card,
+                    date_research=date.today().strftime("%d.%m.%Y"),
+                    target="Высокий" if outcome else "Низкий"
+                ))
+
+                # Persist to Supabase
+                row = dict(
+                    patient_card    = patient_card,
+                    date_research   = date.today().strftime("%d.%m.%Y"),
+                    relapse         = int(relapse),
+                    periods         = float(periods),
+                    mecho           = float(mecho),
+                    first_symptom   = float(first_symptom),
+                    emergency_birth = int(emergency_birth),
+                    fsh             = float(fsh),
+                    vleft           = float(vleft),
+                    vright          = float(vright),
+                    vegfa634        = vegfa634,
+                    tp53            = tp53,
+                    vegfa936        = vegfa936,
+                    kitlg80441      = kitlg80441,
+                    outcome         = "Высокий" if outcome else "Низкий",
+                )
+                try:
+                    insert_prediction(row)
+                    st.caption("Запись сохранена в Supabase.")
+                except Exception as e:
+                    st.warning(f"Не удалось сохранить в Supabase: {e}")
+
         except NoCurrentModel as e:
-            # Extra safety if someone calls predict() directly
-            st.info(
-                "Модель ещё не настроена. Откройте вкладку **🧠 Обучение** и создайте модель."
-            )
+            st.info("Модель ещё не настроена. Откройте вкладку **🧠 Обучение** и создайте модель.")
             with st.expander("Подробности (для разработчика)"):
                 st.write(str(e))
-    
         except Exception as e:
-            # Any other unexpected error: show friendly text + optional details
             st.error("Не удалось сделать прогноз. Попробуйте позже или переобучите модель.")
             with st.expander("Подробности (для разработчика)"):
                 st.exception(e)
-
-        # Keep session display if you like
-        add_record(dict(
-            id=len(st.session_state.records)+1,
-            patient_card=patient_card,
-            date_research=date.today().strftime("%d.%m.%Y"),
-            target="Высокий" if outcome else "Низкий"
-        ))
-
-        # NEW: Persist to Supabase
-        row = dict(
-            patient_card   = patient_card,
-            date_research  = date.today().strftime("%d.%m.%Y"),
-            relapse        = int(relapse),
-            periods        = float(periods),
-            mecho          = float(mecho),
-            first_symptom  = float(first_symptom),
-            emergency_birth= int(emergency_birth),
-            fsh            = float(fsh),
-            vleft          = float(vleft),
-            vright         = float(vright),
-            vegfa634       = vegfa634,
-            tp53           = tp53,
-            vegfa936       = vegfa936,
-            kitlg80441     = kitlg80441,
-            outcome        = "Высокий" if outcome else "Низкий",
-        )
-        try:
-            insert_prediction(row)
-            st.success("**Высокий риск**" if outcome else "**Низкий риск**")
-        except Exception as e:
-            st.error(f"Ошибка записи в Supabase: {e}")
 
 # =============  TAB 2 – session history (CSV export)  ============== #
 with tab_history:
