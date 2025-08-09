@@ -148,6 +148,6 @@ with tab_history:
 
         if changed:
             st.success(f"Обновлено записей: {changed}")
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.info("Нет изменений для сохранения.")
