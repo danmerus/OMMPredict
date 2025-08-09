@@ -62,8 +62,31 @@ def _from_supabase_verified(limit: int = 50000) -> pd.DataFrame:
     df["target"] = df["actual"].map(lab_map)
     return df
 
+def _ensure_target_column(df: pd.DataFrame) -> pd.DataFrame:
+    LAB_MAP = {"Высокий": 1, "Низкий": 0, "high": 1, "low": 0, "1": 1, "0": 0}
+    """Create/normalize numeric 'target' in df if possible."""
+    if "target" in df.columns:
+        # map strings to {0,1} if needed
+        if df["target"].dtype == object:
+            df["target"] = pd.to_numeric(df["target"].map(LAB_MAP), errors="coerce")
+        else:
+            df["target"] = pd.to_numeric(df["target"], errors="coerce")
+        return df
+
+    # try typical alternatives
+    for cand in ("actual", "outcome", "label", "y", "class"):
+        if cand in df.columns:
+            col = df[cand]
+            if col.dtype == object:
+                df["target"] = pd.to_numeric(col.map(LAB_MAP), errors="coerce")
+            else:
+                df["target"] = pd.to_numeric(col, errors="coerce")
+            return df
+
+    return df
+
+
 def _from_local_baseline(rel_or_abs: str | None = None) -> pd.DataFrame:
-    # If user passed an absolute path, use it; else resolve under app/
     if rel_or_abs:
         p = Path(rel_or_abs)
         p = p if p.is_absolute() else (APP_DIR / rel_or_abs)
@@ -71,21 +94,32 @@ def _from_local_baseline(rel_or_abs: str | None = None) -> pd.DataFrame:
         p = DEFAULT_BASELINE
 
     p = p.resolve()
-    print('path to baseline: ', p)
+
+    # Let user see where we looked
+    st.caption(f"📁 Поиск baseline по пути: `{p}`")
+
     if not p.exists():
         st.warning(f"Файл базовых примеров не найден: {p}")
         return pd.DataFrame()
 
     try:
-        # utf-8-sig is friendly to BOM/cyrillic
-        df = pd.read_csv(p, encoding="utf-8-sig")
-        # Optional: quick sanity
-        if df.empty:
-            st.warning(f"Файл пуст: {p}")
+        if p.suffix.lower() in {".xlsx", ".xls"}:
+            df = pd.read_excel(p)
+        else:
+            df = pd.read_csv(p, encoding="utf-8-sig")
     except Exception as e:
         st.warning(f"Не удалось прочитать {p}: {e}")
         return pd.DataFrame()
 
+    n_raw = len(df)
+    if n_raw == 0:
+        st.warning(f"Файл пуст: {p}")
+        return df
+
+    # derive numeric target if possible
+    df = _ensure_target_column(df)
+
+    st.caption(f"✅ Загружено baseline строк: {n_raw} (столбцы: {list(df.columns)[:10]}...)")
     return df
 
 def _apply_feature_engineering(df: pd.DataFrame) -> pd.DataFrame:
