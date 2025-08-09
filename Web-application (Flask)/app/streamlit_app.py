@@ -171,7 +171,7 @@ with tab_train:
         with st.spinner("Готовим данные..."):
             df = assemble_training_data(include_local, local_path)
 
-        if df.empty or "target" not in df.columns:
+        if len(df) < 30 or "target" not in df.columns:
             st.error("Недостаточно размеченных данных (actual). Отметьте фактические исходы во вкладке История.")
         else:
             st.success(f"Найдено обучающих примеров: {len(df)}")
