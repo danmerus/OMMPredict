@@ -141,10 +141,12 @@ with tab_train:
     st.markdown("Выберите источники данных и параметры обучения.")
 
     c1, c2 = st.columns(2)
-    with c1:
-        include_local = st.checkbox("Добавить локальные baseline-примеры", value=False,
-                                    help="CSV/XLSX с такими полями, как в БД (или минимум: признаки + actual).")
-        local_path = st.text_input("Путь к baseline файлу", value="data/baseline_examples.csv")
+    # with c1:
+    #     include_local = st.checkbox("Добавить локальные baseline-примеры", value=False,
+    #                                 help="CSV/XLSX с такими полями, как в БД (или минимум: признаки + actual).")
+    #     local_path = st.text_input("Путь к baseline файлу", value="data/baseline_examples.csv")
+    include_local = True
+    local_path = ''
 
     with c2:
         test_size = st.slider("Test size", 0.1, 0.4, 0.2, 0.05)
