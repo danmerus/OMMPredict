@@ -14,7 +14,7 @@ from sklearn.metrics import (
 )
 
 import streamlit as st
-from db_supabase import get_supabase  # from your earlier helper
+from db import get_supabase  # from your earlier helper
 from converting_service import convert  # your existing converter
 
 # -------- Feature set used in your inference code --------
