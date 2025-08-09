@@ -40,11 +40,13 @@ def _from_supabase_verified(limit: int = 50000) -> pd.DataFrame:
     """Load verified rows from Supabase predictions table."""
     sb = get_supabase()
     # Pull only rows where 'actual' is present and valid
-    res = (sb.table("predictions")
-             .select("*")
-             .is_("actual", "not.is.null")  # Supabase filter
-             .limit(limit)
-             .execute())
+    res = (
+        sb.table("predictions")
+          .select("*")
+          .or_("actual.is.true,actual.is.false")
+          .limit(limit)
+          .execute()
+    )
     df = pd.DataFrame(res.data or [])
     if df.empty:
         return df
