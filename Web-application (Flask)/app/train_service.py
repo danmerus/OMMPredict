@@ -245,9 +245,18 @@ def train_catboost(
     )
 
 def save_model_to_bytes(model: CatBoostClassifier) -> bytes:
-    buf = io.BytesIO()
-    model.save_model(buf, format="cbm")
-    return buf.getvalue()
+    with tempfile.NamedTemporaryFile(suffix=".cbm", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        model.save_model(tmp_path, format="cbm")
+        with open(tmp_path, "rb") as f:
+            data = f.read()
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+    return data
 
 def upload_and_register(
     artifact_bytes: bytes,
