@@ -12,26 +12,29 @@ FEATURE_COLUMNS = [
     "vleft_new","fsh","vright_new"
 ]
 
+class NoCurrentModel(Exception):
+    """Raised when there is no current model set in the registry."""
+
+@st.cache_data(ttl=15)
+def _current_model_version() -> str | None:
+    sb = get_supabase()
+    q = sb.table("model_registry").select("version").eq("is_current", True).limit(1).execute()
+    items = q.data or []
+    return items[0]["version"] if items else None
+
+def model_ready() -> bool:
+    return _current_model_version() is not None
+
 @st.cache_resource
 def _load_current_model() -> CatBoostClassifier:
     sb = get_supabase()
-
-    # 1) Find current model
-    q = sb.table("model_registry").select("*").eq("is_current", True).limit(1).execute()
-    items = q.data or []
-    if not items:
-        raise RuntimeError("No current model in registry. Train and set one as current.")
-
-    version = items[0]["version"]
-    # 2) Download artifact from Storage
+    version = _current_model_version()
+    if not version:
+        # <- raise custom, not generic RuntimeError
+        raise NoCurrentModel("No current model is set. Please train one in the 'Обучение' tab.")
     obj_name = f"{version}-catboost.cbm"
-    # if alternate name was stored, you could store the exact object path in registry
     data = sb.storage.from_("models").download(obj_name)
-    if hasattr(data, "content"):
-        content = data.content  # supabase-py >= 2
-    else:
-        content = data  # supabase-py older versions
-
+    content = getattr(data, "content", data)
     model = CatBoostClassifier()
     model.load_model(io.BytesIO(content))
     return model
