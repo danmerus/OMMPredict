@@ -13,7 +13,9 @@ st.set_page_config("OMM Predict", page_icon="🩺", layout="centered")
 
 # ────────────────────  0. Session state helpers  ──────────────────── #
 if "records" not in st.session_state:
-    st.session_state.records = []  # still keep local session history if you want
+    st.session_state.records = [] 
+if "tr" not in st.session_state: st.session_state["tr"] = None
+if "artifact" not in st.session_state: st.session_state["artifact"] = None
 
 def add_record(rec: dict):
     st.session_state.records.append(rec)
@@ -169,17 +171,16 @@ with tab_train:
         assemble_training_data, train_catboost,
         save_model_to_bytes, upload_and_register
     )
-
     if st.button("🚀 Запустить обучение"):
         with st.spinner("Готовим данные..."):
             df = assemble_training_data(include_local, local_path)
-
+    
         if len(df) < 30 or "target" not in df.columns:
             st.error("Недостаточно размеченных данных. Отметьте фактические исходы во вкладке История.")
         else:
             st.success(f"Найдено обучающих примеров: {len(df)}")
             st.write("Примеры признаков:", df.head(3))
-
+    
             with st.spinner("Обучаем CatBoost..."):
                 tr = train_catboost(
                     df,
@@ -190,73 +191,75 @@ with tab_train:
                     depth=int(depth),
                     l2_leaf_reg=float(l2_leaf_reg),
                 )
+    
+            # store for later runs
+            st.session_state.tr = tr
+            st.session_state.artifact = save_model_to_bytes(tr.model)
+    
+    # --- Show results (if we have them), independent of the Train button state ---
+    tr = st.session_state.tr
+    artifact = st.session_state.artifact
+    if tr is not None:
+        st.subheader("Метрики")
+        m = tr.metrics
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Accuracy", f"{m['accuracy']:.3f}")
+        c2.metric("Precision", f"{m['precision']:.3f}")
+        c3.metric("Recall", f"{m['recall']:.3f}")
+        c4.metric("F1", f"{m['f1']:.3f}")
+        c5.metric("AUC (val)", f"{m['auc']:.3f}")
+    
+        import matplotlib.pyplot as plt
+        fig = plt.figure()
+        plt.imshow(tr.confusion, interpolation="nearest"); plt.title("Confusion matrix"); plt.colorbar()
+        tick_marks = np.arange(2)
+        plt.xticks(tick_marks, ["0", "1"]); plt.yticks(tick_marks, ["0", "1"])
+        plt.xlabel("Predicted"); plt.ylabel("True")
+        for i in range(2):
+            for j in range(2):
+                plt.text(j, i, tr.confusion[i, j], ha="center", va="center")
+        st.pyplot(fig)
+    
+        st.download_button("💾 Скачать модель (.cbm)",
+            data=artifact, file_name=f"{tr.version}-catboost.cbm",
+            mime="application/octet-stream")
+    
+        st.subheader("Сохранить модель как текущую")
+        make_current = st.checkbox("Сделать текущей (будет использоваться в калькуляторе)", value=True, key="mkcur")
+    
+        if st.button("📤 Загрузить в Supabase и зарегистрировать", key="upload"):
+            try:
+                with st.spinner("Загрузка артефакта и запись в реестр..."):
+                    upload_and_register(artifact, tr, make_current=make_current)
+                st.success("Модель сохранена и зарегистрирована!")
+                # optionally clear state
+                # st.session_state.tr = None; st.session_state.artifact = None
+                st.rerun()
+            except Exception as e:
+                st.error(f"Ошибка при загрузке/регистрации: {e}")
 
-            st.subheader("Метрики")
-            m = tr.metrics
-            c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric("Accuracy", f"{m['accuracy']:.3f}")
-            c2.metric("Precision", f"{m['precision']:.3f}")
-            c3.metric("Recall", f"{m['recall']:.3f}")
-            c4.metric("F1", f"{m['f1']:.3f}")
-            c5.metric("AUC (val)", f"{m['auc']:.3f}")
+   
+    # # Save changes
+    # if st.button("Сохранить метки"):
+    #     changed = 0
+    #     # Compare row-by-row to original and push updates where actual/notes changed
+    #     orig = df_db.set_index("id")
+    #     for _, row in edited.iterrows():
+    #         pid = int(row["id"])
+    #         new_actual = row.get("actual")
+    #         new_notes  = row.get("notes")
+    #         old_actual = orig.at[pid, "actual"] if pid in orig.index else None
+    #         old_notes  = orig.at[pid, "notes"]  if pid in orig.index else None
 
-            # Confusion matrix plot
-            import matplotlib.pyplot as plt
-            fig = plt.figure()
-            plt.imshow(tr.confusion, interpolation="nearest")
-            plt.title("Confusion matrix")
-            plt.colorbar()
-            tick_marks = np.arange(2)
-            plt.xticks(tick_marks, ["0", "1"])
-            plt.yticks(tick_marks, ["0", "1"])
-            plt.xlabel("Predicted")
-            plt.ylabel("True")
-            for i in range(2):
-                for j in range(2):
-                    plt.text(j, i, tr.confusion[i, j], ha="center", va="center")
-            st.pyplot(fig)
+    #         if (pd.isna(old_actual) and pd.notna(new_actual)) or (old_actual != new_actual) or (str(old_notes) != str(new_notes)):
+    #             try:
+    #                 update_actual(pid, new_actual, new_notes)
+    #                 changed += 1
+    #             except Exception as e:
+    #                 st.error(f"Ошибка обновления ID={pid}: {e}")
 
-            # Download artifact
-            artifact = save_model_to_bytes(tr.model)
-            st.download_button(
-                "💾 Скачать модель (.cbm)",
-                data=artifact,
-                file_name=f"{tr.version}-catboost.cbm",
-                mime="application/octet-stream"
-            )
-
-            st.subheader("Сохранить модель как текущую")
-            make_current = st.checkbox("Сделать текущей (будет использоваться в калькуляторе)", value=True)
-            if st.button("📤 Загрузить в Supabase и зарегистрировать"):
-                try:
-                    with st.spinner("Загрузка артефакта и запись в реестр..."):
-                        upload_and_register(artifact, tr, make_current=make_current)
-                    st.success("Модель сохранена и зарегистрирована!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Ошибка при загрузке/регистрации: {e}")
-
-    # Save changes
-    if st.button("Сохранить метки"):
-        changed = 0
-        # Compare row-by-row to original and push updates where actual/notes changed
-        orig = df_db.set_index("id")
-        for _, row in edited.iterrows():
-            pid = int(row["id"])
-            new_actual = row.get("actual")
-            new_notes  = row.get("notes")
-            old_actual = orig.at[pid, "actual"] if pid in orig.index else None
-            old_notes  = orig.at[pid, "notes"]  if pid in orig.index else None
-
-            if (pd.isna(old_actual) and pd.notna(new_actual)) or (old_actual != new_actual) or (str(old_notes) != str(new_notes)):
-                try:
-                    update_actual(pid, new_actual, new_notes)
-                    changed += 1
-                except Exception as e:
-                    st.error(f"Ошибка обновления ID={pid}: {e}")
-
-        if changed:
-            st.success(f"Обновлено записей: {changed}")
-            st.rerun()
-        else:
-            st.info("Нет изменений для сохранения.")
+    #     if changed:
+    #         st.success(f"Обновлено записей: {changed}")
+    #         st.rerun()
+    #     else:
+    #         st.info("Нет изменений для сохранения.")
