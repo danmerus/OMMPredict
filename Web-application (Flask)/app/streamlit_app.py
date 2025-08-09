@@ -141,7 +141,7 @@ with tab_train:
 
     st.markdown("Выберите источники данных и параметры обучения.")
 
-    c2 = st.columns(2)
+    c2 = st.columns(1)
     # with c1:
     #     include_local = st.checkbox("Добавить локальные baseline-примеры", value=False,
     #                                 help="CSV/XLSX с такими полями, как в БД (или минимум: признаки + actual).")
