@@ -1,7 +1,8 @@
+pandas
 flask
 requests
 flask-sqlalchemy
 numpy
+catboost>=1.2.5
 scikit-learn
-catboost
 supabase
