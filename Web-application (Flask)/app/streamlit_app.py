@@ -6,7 +6,7 @@ from converting_service import convert
 from predict_service import predict
 
 # NEW: import Supabase helpers
-from db import insert_prediction, read_predictions
+from db import insert_prediction, read_predictions, update_actual
 
 st.set_page_config("OMM Predict", page_icon="🩺", layout="centered")
 
