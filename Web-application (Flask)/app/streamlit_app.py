@@ -172,7 +172,7 @@ with tab_train:
             df = assemble_training_data(include_local, local_path)
 
         if len(df) < 30 or "target" not in df.columns:
-            st.error("Недостаточно размеченных данных (actual). Отметьте фактические исходы во вкладке История.")
+            st.error("Недостаточно размеченных данных. Отметьте фактические исходы во вкладке История.")
         else:
             st.success(f"Найдено обучающих примеров: {len(df)}")
             st.write("Примеры признаков:", df.head(3))
