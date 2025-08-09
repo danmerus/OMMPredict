@@ -88,30 +88,66 @@ with tab_predict:
         )
         try:
             insert_prediction(row)
-            st.success("Записано в базу: **Высокий риск**" if outcome else "Записано в базу: **Низкий риск**")
+            st.success("**Высокий риск**" if outcome else "**Низкий риск**")
         except Exception as e:
             st.error(f"Ошибка записи в Supabase: {e}")
 
 # =============  TAB 2 – session history (CSV export)  ============== #
 with tab_history:
     st.header("История (из БД)")
-    try:
-        df_db = read_predictions(limit=1000)
-    except Exception as e:
-        st.error(f"Ошибка чтения из Supabase: {e}")
-        df_db = pd.DataFrame()
-
+    df_db = read_predictions(limit=1000)
     st.dataframe(df_db, use_container_width=True)
 
-    if not df_db.empty:
-        csv_db = df_db.to_csv(index=False).encode("utf-8")
-        st.download_button("💾 Скачать CSV (БД)", csv_db, "ommpredict_history_db.csv", "text/csv")
+    st.subheader("Маркировка факта (истина/ложь)")
+    # Work on a copy with only what we need to edit
+    label_cols = ["id", "patient_card", "date_research", "outcome", "actual", "notes"]
+    df_label = df_db[label_cols].copy() if not df_db.empty else pd.DataFrame(columns=label_cols)
 
-    # (Optional) also show in-memory session history
-    st.subheader("Текущая сессия (локально)")
-    df = pd.DataFrame(st.session_state.records)
-    st.dataframe(df, use_container_width=True)
+    # Show only unlabeled first (you can toggle to show all)
+    show_all = st.checkbox("Показать все записи", value=False)
+    if not show_all:
+        df_label = df_label[df_label["actual"].isna()]
 
-    if not df.empty:
-        csv = df.to_csv(index=False).encode("utf-8")
-        st.download_button("💾 Скачать CSV (сессия)", csv, "ommpredict_history.csv", "text/csv")
+    # Editable grid for 'actual' + 'notes'
+    edited = st.data_editor(
+        df_label,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "actual": st.column_config.SelectboxColumn(
+                "Факт", options=["Высокий", "Низкий"], help="Подтвердите реальный исход"
+            ),
+            "notes": st.column_config.TextColumn("Заметки"),
+            "outcome": st.column_config.TextColumn("Предсказание", disabled=True),
+            "patient_card": st.column_config.TextColumn("Пациент", disabled=True),
+            "date_research": st.column_config.TextColumn("Дата", disabled=True),
+            "id": st.column_config.NumberColumn("ID", disabled=True),
+        },
+        disabled=["id", "patient_card", "date_research", "outcome"],
+        key="label_editor",
+    )
+
+    # Save changes
+    if st.button("Сохранить метки"):
+        changed = 0
+        # Compare row-by-row to original and push updates where actual/notes changed
+        orig = df_db.set_index("id")
+        for _, row in edited.iterrows():
+            pid = int(row["id"])
+            new_actual = row.get("actual")
+            new_notes  = row.get("notes")
+            old_actual = orig.at[pid, "actual"] if pid in orig.index else None
+            old_notes  = orig.at[pid, "notes"]  if pid in orig.index else None
+
+            if (pd.isna(old_actual) and pd.notna(new_actual)) or (old_actual != new_actual) or (str(old_notes) != str(new_notes)):
+                try:
+                    update_actual(pid, new_actual, new_notes)
+                    changed += 1
+                except Exception as e:
+                    st.error(f"Ошибка обновления ID={pid}: {e}")
+
+        if changed:
+            st.success(f"Обновлено записей: {changed}")
+            st.experimental_rerun()
+        else:
+            st.info("Нет изменений для сохранения.")
