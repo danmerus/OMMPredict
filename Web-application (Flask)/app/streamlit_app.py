@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 from converting_service import convert
-from predict_service import predict
+from predict_service import predict, model_ready, NoCurrentModel
 
 # NEW: import Supabase helpers
 from db import insert_prediction, read_predictions, update_actual
