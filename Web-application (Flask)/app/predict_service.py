@@ -3,7 +3,7 @@ import os, io
 import numpy as np
 import streamlit as st
 from catboost import CatBoostClassifier
-from db_supabase import get_supabase
+from db import get_supabase
 from converting_service import convert  # keep your converter
 
 FEATURE_COLUMNS = [
