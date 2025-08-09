@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 @st.cache_resource
 def get_supabase() -> Client:
     url = st.secrets["supabase"]["url"]
-    key = st.secrets["supabase"].get("service_key") or st.secrets["supabase"]["anon_key"]
+    # key = st.secrets["supabase"].get("service_key") or st.secrets["supabase"]["anon_key"]
+    key = st.secrets["supabase"]["SUPABASE_SERVICE_KEY"]
     return create_client(url, key)
 
 def insert_prediction(row: dict):
