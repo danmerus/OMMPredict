@@ -162,7 +162,8 @@ def assemble_training_data(
     local_path: Optional[str]
 ) -> pd.DataFrame:
     df_sb = _from_supabase_verified()
-    df_sb = _apply_feature_engineering(df_sb)
+    if len(df_sb) > 0:
+        df_sb = _apply_feature_engineering(df_sb)
     if include_local:
         df_base = _from_local_baseline(local_path or "")
         if not df_base.empty:
