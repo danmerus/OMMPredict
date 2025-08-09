@@ -71,6 +71,7 @@ def _from_local_baseline(rel_or_abs: str | None = None) -> pd.DataFrame:
         p = DEFAULT_BASELINE
 
     p = p.resolve()
+    print('path to baseline: ', p)
     if not p.exists():
         st.warning(f"Файл базовых примеров не найден: {p}")
         return pd.DataFrame()
