@@ -1,5 +1,5 @@
 # predict_service.py
-import os, io
+import os, io, tempfile
 import numpy as np
 import streamlit as st
 from catboost import CatBoostClassifier
@@ -26,17 +26,40 @@ def model_ready() -> bool:
     return _current_model_version() is not None
 
 @st.cache_resource
-def _load_current_model() -> CatBoostClassifier:
+def _load_current_model():
     sb = get_supabase()
-    version = _current_model_version()
-    if not version:
-        # <- raise custom, not generic RuntimeError
-        raise NoCurrentModel("No current model is set. Please train one in the 'Обучение' tab.")
+
+    # 1) Find current model version
+    q = sb.table("model_registry").select("*").eq("is_current", True).limit(1).execute()
+    items = q.data or []
+    if not items:
+        raise RuntimeError("No current model in registry. Train and set one as current.")
+    version = items[0]["version"]
+
+    # 2) Download artifact bytes
     obj_name = f"{version}-catboost.cbm"
     data = sb.storage.from_("models").download(obj_name)
-    content = getattr(data, "content", data)
-    model = CatBoostClassifier()
-    model.load_model(io.BytesIO(content))
+
+    # supabase-py returns raw bytes; some versions return dicts
+    content = data.get("data") if isinstance(data, dict) else data
+    if not isinstance(content, (bytes, bytearray)) or len(content) == 0:
+        raise RuntimeError(f"Failed to download model bytes for {obj_name}")
+
+    # 3) Write to a temp file and load
+    with tempfile.NamedTemporaryFile(suffix=".cbm", delete=False) as tmp:
+        tmp.write(content)
+        tmp.flush()
+        tmp_path = tmp.name
+
+    try:
+        model = CatBoostClassifier()
+        model.load_model(tmp_path)  # must be a path
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
     return model
 
 def _featurize_input(
