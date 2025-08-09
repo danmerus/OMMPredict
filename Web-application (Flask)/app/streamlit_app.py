@@ -18,7 +18,7 @@ def add_record(rec: dict):
     st.session_state.records.append(rec)
 
 # ────────────────────  1. Tabs  ───────────────────────────────────── #
-tab_predict, tab_history = st.tabs(["🩺 Калькулятор", "📜 История сеанса"])
+tab_predict, tab_history, tab_train = st.tabs(["🩺 Калькулятор", "📜 История сеанса", "🧠 Обучение"])
 
 # =============  TAB 1 – single-patient calculator  ================= #
 with tab_predict:
@@ -126,6 +126,104 @@ with tab_history:
         disabled=["id", "patient_card", "date_research", "outcome"],
         key="label_editor",
     )
+    
+with tab_train:
+    st.title("🧠 Переобучение модели")
+
+    st.markdown("Выберите источники данных и параметры обучения.")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        include_local = st.checkbox("Добавить локальные baseline-примеры", value=False,
+                                    help="CSV/XLSX с такими полями, как в БД (или минимум: признаки + actual).")
+        local_path = st.text_input("Путь к baseline файлу", value="data/baseline_examples.csv")
+
+    with c2:
+        test_size = st.slider("Test size", 0.1, 0.4, 0.2, 0.05)
+        random_state = st.number_input("Random seed", 1, 999999, 42)
+
+    st.subheader("CatBoost параметры")
+    c3, c4, c5, c6 = st.columns(4)
+    with c3:
+        iterations = st.number_input("iterations", 100, 5000, 600, 50)
+    with c4:
+        learning_rate = st.number_input("learning_rate", 0.001, 0.5, 0.05, 0.001)
+    with c5:
+        depth = st.number_input("depth", 3, 10, 6, 1)
+    with c6:
+        l2_leaf_reg = st.number_input("l2_leaf_reg", 1.0, 20.0, 3.0, 0.5)
+
+    st.divider()
+    from train_service import (
+        assemble_training_data, train_catboost,
+        save_model_to_bytes, upload_and_register
+    )
+
+    if st.button("🚀 Запустить обучение"):
+        with st.spinner("Готовим данные..."):
+            df = assemble_training_data(include_local, local_path)
+
+        if df.empty or "target" not in df.columns:
+            st.error("Недостаточно размеченных данных (actual). Отметьте фактические исходы во вкладке История.")
+        else:
+            st.success(f"Найдено обучающих примеров: {len(df)}")
+            st.write("Примеры признаков:", df.head(3))
+
+            with st.spinner("Обучаем CatBoost..."):
+                tr = train_catboost(
+                    df,
+                    test_size=float(test_size),
+                    random_state=int(random_state),
+                    iterations=int(iterations),
+                    learning_rate=float(learning_rate),
+                    depth=int(depth),
+                    l2_leaf_reg=float(l2_leaf_reg),
+                )
+
+            st.subheader("Метрики")
+            m = tr.metrics
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Accuracy", f"{m['accuracy']:.3f}")
+            c2.metric("Precision", f"{m['precision']:.3f}")
+            c3.metric("Recall", f"{m['recall']:.3f}")
+            c4.metric("F1", f"{m['f1']:.3f}")
+            c5.metric("AUC (val)", f"{m['auc']:.3f}")
+
+            # Confusion matrix plot
+            import matplotlib.pyplot as plt
+            fig = plt.figure()
+            plt.imshow(tr.confusion, interpolation="nearest")
+            plt.title("Confusion matrix")
+            plt.colorbar()
+            tick_marks = np.arange(2)
+            plt.xticks(tick_marks, ["0", "1"])
+            plt.yticks(tick_marks, ["0", "1"])
+            plt.xlabel("Predicted")
+            plt.ylabel("True")
+            for i in range(2):
+                for j in range(2):
+                    plt.text(j, i, tr.confusion[i, j], ha="center", va="center")
+            st.pyplot(fig)
+
+            # Download artifact
+            artifact = save_model_to_bytes(tr.model)
+            st.download_button(
+                "💾 Скачать модель (.cbm)",
+                data=artifact,
+                file_name=f"{tr.version}-catboost.cbm",
+                mime="application/octet-stream"
+            )
+
+            st.subheader("Сохранить модель как текущую")
+            make_current = st.checkbox("Сделать текущей (будет использоваться в калькуляторе)", value=True)
+            if st.button("📤 Загрузить в Supabase и зарегистрировать"):
+                try:
+                    with st.spinner("Загрузка артефакта и запись в реестр..."):
+                        upload_and_register(artifact, tr, make_current=make_current)
+                    st.success("Модель сохранена и зарегистрирована!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Ошибка при загрузке/регистрации: {e}")
 
     # Save changes
     if st.button("Сохранить метки"):
