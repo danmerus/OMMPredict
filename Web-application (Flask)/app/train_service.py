@@ -43,7 +43,7 @@ def _from_supabase_verified(limit: int = 50000) -> pd.DataFrame:
     res = (
         sb.table("predictions")
           .select("*")
-          .or_("actual.is.true,actual.is.false")
+          .not_.is_("actual", "null")
           .limit(limit)
           .execute()
     )
