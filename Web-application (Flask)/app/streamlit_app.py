@@ -54,11 +54,34 @@ with tab_predict:
         vleft_new  = vleft  * 532
         vright_new = vright * 532
 
-        outcome = predict(
-            relapse, vegfa634gg, vegfa634c, periods, tp53gg, mecho,
-            vegfa936cc, first_symptom, kitlg80441cc, emergency_birth,
-            vleft_new, fsh, vright_new
-        )
+        try:
+            if not model_ready():
+                st.info(
+                    "Модель пока не выбрана. Перейдите во вкладку **🧠 Обучение**, "
+                    "обучите модель и отметьте её как текущую."
+                )
+            else:
+                outcome = predict(
+                    relapse, vegfa634, tp53, vegfa936, kitlg80441,
+                    periods, mecho, first_symptom, emergency_birth,
+                    fsh, vleft, vright
+                )
+                # your add_record(...) + success UI
+                st.success("**Высокий риск**" if outcome else "**Низкий риск**")
+    
+        except NoCurrentModel as e:
+            # Extra safety if someone calls predict() directly
+            st.info(
+                "Модель ещё не настроена. Откройте вкладку **🧠 Обучение** и создайте модель."
+            )
+            with st.expander("Подробности (для разработчика)"):
+                st.write(str(e))
+    
+        except Exception as e:
+            # Any other unexpected error: show friendly text + optional details
+            st.error("Не удалось сделать прогноз. Попробуйте позже или переобучите модель.")
+            with st.expander("Подробности (для разработчика)"):
+                st.exception(e)
 
         # Keep session display if you like
         add_record(dict(
