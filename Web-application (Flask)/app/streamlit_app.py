@@ -43,7 +43,7 @@ with tab_predict:
 
         with c2:
             vegfa634   = st.selectbox("VEGF-A −634", ["CC", "GC", "GG"])
-            tp53       = st.selectbox("TP53 Ex4+119", ["CC", "CG", "GG"])
+            tp53       = st.selectbox("TP53 Ex4+119", ["CC", "GC", "GG"])
             vegfa936   = st.selectbox("VEGF-A +936", ["CC", "CT", "TT"])
             kitlg80441 = st.selectbox("KITLG 80441", ["CC", "CT", "TT"])
 
