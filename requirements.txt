@@ -6,3 +6,4 @@ numpy
 catboost>=1.2.5
 scikit-learn
 supabase
+matplotlib

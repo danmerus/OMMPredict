@@ -3,6 +3,14 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone
 
+MODEL_BUCKET = "models"
+
+
+def model_object_name(version: str) -> str:
+    """File name of a model in Supabase Storage. The registry stores only `version`."""
+    return f"{version}-catboost.cbm"
+
+
 @st.cache_resource
 def get_supabase() -> Client:
     url = st.secrets["supabase"]["url"]
