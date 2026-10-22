@@ -182,7 +182,7 @@ with tab_history:
             "id": st.column_config.NumberColumn("ID", disabled=True),
         },
         disabled=["id", "patient_card", "date_research", "outcome"],
-        key="label_editor",
+        key=f"label_editor_{show_all}",  # separate state per view, so edits never shift onto other rows
     )
 
     if st.button("💾 Сохранить метки"):
@@ -197,7 +197,8 @@ with tab_history:
                 except Exception as e:
                     errors.append(f"ID={pid}: {e}")
             # Edits are stored by row position; drop them so they can't land on other rows after reload.
-            st.session_state.pop("label_editor", None)
+            for view in (True, False):
+                st.session_state.pop(f"label_editor_{view}", None)
             if errors:
                 st.error("Ошибки при сохранении:\n\n" + "\n\n".join(errors))
             else:
