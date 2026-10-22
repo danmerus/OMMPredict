@@ -23,6 +23,7 @@ from db import MODEL_BUCKET, get_supabase, model_object_name
 from features import (
     FEATURE_COLUMNS, FEATURE_VERSION, build_features, normalize_baseline, to_target,
 )
+from model_registry import set_current_model
 
 APP_DIR = Path(__file__).resolve().parent         # .../Web-application (Flask)/app
 DATA_DIR = APP_DIR / "data"                       # .../app/data
@@ -242,10 +243,4 @@ def upload_and_register(
     }).execute()
 
     if make_current:
-        # Retire the previous current model only after the new one is in place,
-        # so the calculator never sees "no current model".
-        (sb.table("model_registry")
-           .update({"is_current": False})
-           .eq("is_current", True)
-           .neq("version", tr.version)
-           .execute())
+        set_current_model(sb, tr.version)

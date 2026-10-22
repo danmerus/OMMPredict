@@ -1,5 +1,4 @@
 # predict_service.py
-import json
 import os
 import tempfile
 
@@ -9,6 +8,7 @@ from catboost import CatBoostClassifier
 
 from db import MODEL_BUCKET, get_supabase, model_object_name
 from features import FEATURE_VERSION, build_features
+from model_registry import feature_version_of
 
 
 class NoCurrentModel(Exception):
@@ -19,13 +19,30 @@ class OutdatedModel(Exception):
     """Raised when the current model was trained with a different feature format."""
 
 
+REGISTRY_COLUMNS = "version, params, metrics, samples_used, is_current"
+
+
 @st.cache_data(ttl=15)
 def current_model_info() -> dict | None:
-    """Registry row ({version, params}) of the current model, or None."""
+    """Registry row of the current model, or None."""
     sb = get_supabase()
-    q = sb.table("model_registry").select("version, params").eq("is_current", True).limit(1).execute()
+    q = sb.table("model_registry").select(REGISTRY_COLUMNS).eq("is_current", True).limit(1).execute()
     items = q.data or []
     return items[0] if items else None
+
+
+@st.cache_data(ttl=15)
+def list_models(limit: int = 100) -> list[dict]:
+    """Registry rows, newest first."""
+    sb = get_supabase()
+    q = sb.table("model_registry").select(REGISTRY_COLUMNS).order("version", desc=True).limit(limit).execute()
+    return q.data or []
+
+
+def refresh_registry_cache() -> None:
+    """Call after changing the registry so every page sees the change right away."""
+    current_model_info.clear()
+    list_models.clear()
 
 
 def model_ready() -> bool:
@@ -66,10 +83,7 @@ def predict(patient: dict, threshold: float = 0.5) -> tuple[int, float]:
     if info is None:
         raise NoCurrentModel("No current model in registry. Train and set one as current.")
 
-    params = info.get("params") or {}
-    if isinstance(params, str):
-        params = json.loads(params)
-    model_fv = params.get("feature_version")
+    model_fv = feature_version_of(info)
     if model_fv != FEATURE_VERSION:
         raise OutdatedModel(
             f"Model {info['version']} was trained with feature_version={model_fv}; "

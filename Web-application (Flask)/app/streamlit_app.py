@@ -7,10 +7,12 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from db import insert_prediction, read_predictions, update_actual
+from db import get_supabase, insert_prediction, read_predictions, update_actual
 from labeling import changed_labels
+from model_registry import describe, is_compatible, models_table, set_current_model
 from predict_service import (
-    NoCurrentModel, OutdatedModel, current_model_info, model_ready, predict,
+    NoCurrentModel, OutdatedModel, current_model_info, list_models, model_ready, predict,
+    refresh_registry_cache,
 )
 from train_service import (
     assemble_training_data, save_model_to_bytes, train_catboost, upload_and_register,
@@ -62,6 +64,11 @@ tab_predict, tab_history, tab_train = st.tabs(["🩺 Калькулятор", "�
 # =============  TAB 1 – single-patient calculator  ================= #
 with tab_predict:
     st.title("OMM Predict – снижение овариального резерва")
+    try:
+        _info = current_model_info()
+        st.caption(f"Текущая модель: {describe(_info)}" if _info else "Текущая модель: не выбрана")
+    except Exception:
+        st.caption("Текущая модель: не удалось получить данные из реестра")
 
     with st.form("calc"):
         c1, c2 = st.columns([2, 1])
@@ -309,8 +316,55 @@ with tab_train:
             try:
                 with st.spinner("Загрузка артефакта и запись в реестр..."):
                     upload_and_register(artifact, tr, make_current=make_current)
-                current_model_info.clear()  # calculator picks up the new model right away
+                refresh_registry_cache()  # calculator picks up the new model right away
                 st.session_state["model_registered"] = f"Модель {tr.version} сохранена и зарегистрирована!"
                 st.rerun()
             except Exception as e:
                 st.error(f"Ошибка при загрузке/регистрации: {e}")
+
+    # --- Registered models: see them all and choose which one the calculator uses ---
+    st.divider()
+    st.subheader("📚 Зарегистрированные модели")
+    switched = st.session_state.pop("model_switched", None)
+    if switched:
+        st.success(switched)
+
+    try:
+        models = list_models()
+    except Exception as e:
+        models = []
+        st.error(f"Не удалось загрузить реестр моделей: {e}")
+
+    if not models:
+        st.info("Пока нет зарегистрированных моделей.")
+    else:
+        st.dataframe(
+            models_table(models), use_container_width=True, hide_index=True,
+            column_config={"AUC (CV)": st.column_config.NumberColumn(format="%.3f")},
+        )
+        st.caption(
+            "AUC модели в старом формате не сравним и не показан. Разница AUC между переобучениями "
+            "на ~70 примерах — в основном шум: выбирайте самую новую модель или обученную на большем "
+            "числе примеров, а не ту, у которой AUC выше."
+        )
+        compatible = {m["version"]: m for m in models if is_compatible(m)}
+        current = next((m["version"] for m in models if m.get("is_current")), None)
+        if not compatible:
+            st.info("Нет моделей в актуальном формате — обучите и зарегистрируйте модель выше.")
+        else:
+            versions = list(compatible)
+            chosen = st.selectbox(
+                "Модель для калькулятора",
+                versions,
+                index=versions.index(current) if current in compatible else 0,
+                format_func=lambda v: describe(compatible[v]) + (" (текущая)" if v == current else ""),
+                key="model_choice",
+            )
+            if st.button("✅ Сделать текущей", disabled=(chosen == current)):
+                try:
+                    set_current_model(get_supabase(), chosen)
+                    refresh_registry_cache()
+                    st.session_state["model_switched"] = f"Калькулятор теперь использует модель {chosen}."
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Не удалось сменить модель: {e}")
